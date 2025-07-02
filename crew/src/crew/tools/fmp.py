@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import pandas as pd
 from datetime import datetime
@@ -225,6 +226,9 @@ class FMPTool(BaseTool):
             save_format: 'csv', 'excel', or 'both'
             **kwargs: Additional parameters for flexibility (handles various parameter names from LLM)
         """
+        # Debug logging
+        print(f"🔍 FMP Tool called with: symbol={symbol}, data_type={data_type}, kwargs={kwargs}")
+        
         # Handle various parameter name variations from LLM/agent calls
         if symbol is None:
             symbol = kwargs.get('stock_symbol', kwargs.get('ticker', ''))
@@ -251,9 +255,21 @@ class FMPTool(BaseTool):
         if 'sav' in kwargs or 'save' in kwargs:
             save_to_file = kwargs.get('sav', kwargs.get('save', save_to_file))
         
+        print(f"🔍 After parameter processing: symbol={symbol}, data_type={data_type}")
+        
         if not symbol:
             return "Error: No stock symbol provided. Please specify a symbol parameter."
+        
         symbol = symbol.upper()
+        
+        # Validate stock symbol format
+        if not re.match(r'^[A-Z]{1,5}$', symbol):
+            return f"Error: Invalid stock symbol format '{symbol}'. Stock symbols should be 1-5 uppercase letters."
+        
+        # Check for common invalid symbols that might be parsing errors
+        invalid_symbols = ['NSIVE', 'NSVE', 'COMPR', 'COMP', 'ANALY', 'ANAL', 'REPOR', 'REPO', 'STUDI', 'STUD', 'HENSI', 'HENS']
+        if symbol in invalid_symbols:
+            return f"Error: '{symbol}' appears to be a parsing error, not a valid stock symbol. Please provide a valid company name or stock symbol."
         
         # Handle different data_type variations
         if data_type in ["income-statement", "income"]:

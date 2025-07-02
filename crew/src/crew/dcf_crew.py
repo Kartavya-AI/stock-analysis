@@ -48,6 +48,8 @@ class DCFCrew:
         Extract or derive stock symbol from company name
         This is a simple mapping - in production, you'd use a more comprehensive database
         """
+        print(f"🔍 extract_stock_symbol called with: '{company_name}'")
+        
         # Common company name to stock symbol mappings
         symbol_mapping = {
             'apple': 'AAPL',
@@ -141,22 +143,46 @@ class DCFCrew:
         clean_name = re.sub(r'\s+', ' ', clean_name)  # Replace multiple spaces with single space
         clean_name = re.sub(r'[^\w\s&.-]', '', clean_name)  # Remove special characters except &, ., -
         
+        print(f"🔍 Cleaned name: '{clean_name}'")
+        
         # Check exact match first
         if clean_name in symbol_mapping:
-            return symbol_mapping[clean_name]
+            result = symbol_mapping[clean_name]
+            print(f"🔍 Exact match found: '{result}'")
+            return result
         
         # Check partial matches
         for name, symbol in symbol_mapping.items():
             if name in clean_name or clean_name in name:
+                print(f"🔍 Partial match found: '{name}' -> '{symbol}'")
                 return symbol
         
         # If no match found, return the original name (user might have provided symbol)
         # Check if it looks like a stock symbol (2-5 uppercase letters)
-        if re.match(r'^[A-Z]{2,5}$', company_name.strip()):
-            return company_name.strip().upper()
+        original_upper = company_name.strip().upper()
+        if re.match(r'^[A-Z]{2,5}$', original_upper):
+            print(f"🔍 Looks like stock symbol: '{original_upper}'")
+            return original_upper
         
-        # Default fallback - return cleaned name in uppercase
-        return clean_name.upper().replace(' ', '')[:5]
+        # Check for common parsing errors
+        invalid_patterns = ['NSIVE', 'NSVE', 'COMPR', 'COMP', 'ANALY', 'ANAL', 'REPOR', 'REPO', 'STUDI', 'STUD', 'HENSI', 'HENS']
+        fallback_test = clean_name.upper().replace(' ', '')[:5]
+        if fallback_test in invalid_patterns or fallback_test[:4] in invalid_patterns:
+            # This looks like a parsing error, return empty to trigger manual handling
+            print(f"🔍 Invalid pattern detected: '{fallback_test}' - returning empty")
+            return ''
+        
+        # Default fallback - but be more careful
+        fallback = clean_name.upper().replace(' ', '')[:4]  # Limit to 4 chars to be safer
+        
+        # Only return fallback if it looks reasonable (contains actual letters, not just fragments)
+        if len(fallback) >= 2 and not any(fragment in fallback for fragment in ['NSIV', 'OMPR', 'NALY']):
+            print(f"🔍 Using fallback: '{fallback}'")
+            return fallback
+        
+        # If we can't determine a good symbol, return empty string
+        print(f"🔍 No valid symbol found - returning empty")
+        return ''
     
     @agent
     def company_researcher(self) -> Agent:
@@ -299,6 +325,8 @@ class DCFCrew:
         Extract basic information from query to help guide the analysis
         This is a helper method for the crew
         """
+        print(f"🔍 DCF Crew: Extracting info from query: '{query}'")
+        
         query_lower = query.lower()
         
         # Try to extract company name using common patterns
@@ -311,16 +339,32 @@ class DCFCrew:
         ]
         
         company_name = None
-        for pattern in company_patterns:
+        for i, pattern in enumerate(company_patterns):
             match = re.search(pattern, query, re.IGNORECASE)
             if match:
                 company_name = match.group(1).strip()
+                print(f"🔍 Pattern {i+1} matched: '{company_name}'")
                 break
+        
+        print(f"🔍 Extracted company name: '{company_name}'")
         
         # Extract stock symbol if provided
         stock_symbol = None
         if company_name:
+            print(f"🔍 Converting '{company_name}' to stock symbol...")
             stock_symbol = self.extract_stock_symbol(company_name)
+            print(f"🔍 Converted to symbol: '{stock_symbol}'")
+            
+            # If extraction failed (returned empty), try to use the original if it looks like a symbol
+            if not stock_symbol and re.match(r'^[A-Z]{2,5}$', company_name.strip()):
+                stock_symbol = company_name.strip().upper()
+                print(f"🔍 Using original as symbol: '{stock_symbol}'")
+            
+            # If still no symbol and company_name looks suspicious, reset company_name
+            if not stock_symbol and any(fragment in company_name.upper() for fragment in ['NSIVE', 'COMPREHENSIVE', 'ANALYSIS']):
+                print(f"🔍 Suspicious company name detected, resetting...")
+                company_name = None
+                stock_symbol = None
         
         # Extract period preference
         period = 'annual'

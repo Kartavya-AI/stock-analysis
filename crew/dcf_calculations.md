@@ -1,1 +1,1 @@
-Unable to perform DCF analysis for NSIVE due to the stock ticker not being found in the financial data API. Please provide a valid stock ticker to proceed.
+I am unable to perform the DCF valuation for NSIVE because the provided stock symbol is invalid. Please provide a valid stock symbol to proceed with the analysis.

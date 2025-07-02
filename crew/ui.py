@@ -82,8 +82,8 @@ def display_executive_summary(summary: str):
     """Display executive summary in a structured format"""
     st.markdown("### 📋 Executive Summary")
     st.markdown(f"""
-    <div style='background: #2c3e50; padding: 20px; border-radius: 10px; border-left: 4px solid #4472C4; margin: 10px 0;'>
-        <p style='margin: 0; font-size: 16px; line-height: 1.6;'>{summary}</p>
+    <div style='background: #1a252f; padding: 20px; border-radius: 10px; border-left: 4px solid #4472C4; margin: 10px 0;'>
+        <p style='margin: 0; font-size: 16px; line-height: 1.6; color: #ffffff;'>{summary}</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -92,8 +92,8 @@ def display_company_overview(overview: str):
     """Display company overview in a structured format"""
     st.markdown("### 🏢 Company Overview")
     st.markdown(f"""
-    <div style='background: #34495e; padding: 20px; border-radius: 10px; margin: 10px 0;'>
-        <p style='margin: 0; font-size: 15px; line-height: 1.6;'>{overview}</p>
+    <div style='background: #1a252f; padding: 20px; border-radius: 10px; margin: 10px 0;'>
+        <p style='margin: 0; font-size: 15px; line-height: 1.6; color: #ffffff;'>{overview}</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -107,13 +107,13 @@ def display_valuation_results(valuation_data: Dict):
     current_price = valuation_data.get('current_price', 'N/A')
     upside_potential = valuation_data.get('upside_potential', 'N/A')
     
-    # Color coding for recommendation
+    # Color coding for recommendation - using darker, more visible colors
     color_map = {
-        "UNDERVALUED": "#28a745",
-        "OVERVALUED": "#dc3545", 
-        "FAIRLY_VALUED": "#ffc107"
+        "UNDERVALUED": "#1e7e34",  # Darker green
+        "OVERVALUED": "#bd2130",   # Darker red
+        "FAIRLY_VALUED": "#e0a800"  # Darker yellow/amber
     }
-    bg_color = color_map.get(recommendation, "#6c757d")
+    bg_color = color_map.get(recommendation, "#1a252f")
     
     # Display recommendation banner
     st.markdown(f"""
@@ -267,9 +267,9 @@ def display_dcf_analysis(dcf_data: Dict):
             display_name = trend_name.replace('_', ' ').title()
             
             st.markdown(f"""
-            <div style='background: #16a085; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 3px solid #4472C4;'>
-                <h4 style='margin: 0 0 10px 0; color: #333;'>{display_name}</h4>
-                <p style='margin: 0; font-size: 14px; line-height: 1.5;'>{trend_description}</p>
+            <div style='background: #0d7377; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 3px solid #4472C4;'>
+                <h4 style='margin: 0 0 10px 0; color: #ffffff;'>{display_name}</h4>
+                <p style='margin: 0; font-size: 14px; line-height: 1.5; color: #ffffff;'>{trend_description}</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -281,8 +281,8 @@ def display_key_insights(insights: list):
     if insights:
         for i, insight in enumerate(insights, 1):
             st.markdown(f"""
-            <div style='background: #8e44ad; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 3px solid #ffc107;'>
-                <p style='margin: 0; font-size: 14px; line-height: 1.5;'><strong>Insight {i}:</strong> {insight}</p>
+            <div style='background: #5a2d82; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 3px solid #ffc107;'>
+                <p style='margin: 0; font-size: 14px; line-height: 1.5; color: #ffffff;'><strong>Insight {i}:</strong> {insight}</p>
             </div>
             """, unsafe_allow_html=True)
     else:
@@ -299,8 +299,8 @@ def display_methodology_and_notes(analysis_json: Dict):
         if 'methodology' in analysis_json:
             st.markdown("#### 🔬 Methodology")
             st.markdown(f"""
-            <div style='background: #e8f5e8; padding: 15px; border-radius: 8px; border-left: 3px solid #28a745;'>
-                <p style='margin: 0; font-size: 14px; font-family: monospace;'>{analysis_json['methodology']}</p>
+            <div style='background: #1e7e34; padding: 15px; border-radius: 8px; border-left: 3px solid #28a745;'>
+                <p style='margin: 0; font-size: 14px; font-family: monospace; color: #ffffff;'>{analysis_json['methodology']}</p>
             </div>
             """, unsafe_allow_html=True)
     
@@ -308,8 +308,8 @@ def display_methodology_and_notes(analysis_json: Dict):
         if 'data_quality_notes' in analysis_json:
             st.markdown("#### ⚠️ Data Quality Notes")
             st.markdown(f"""
-            <div style='background: #ffeaa7; padding: 15px; border-radius: 8px; border-left: 3px solid #fdcb6e;'>
-                <p style='margin: 0; font-size: 14px;'>{analysis_json['data_quality_notes']}</p>
+            <div style='background: #b8860b; padding: 15px; border-radius: 8px; border-left: 3px solid #ffc107;'>
+                <p style='margin: 0; font-size: 14px; color: #ffffff;'>{analysis_json['data_quality_notes']}</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -335,10 +335,41 @@ def main():
         margin-bottom: 20px;
     }
     .stMetric {
-        background: white;
+        background: #ffffff;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        border: 1px solid #e0e0e0;
+        margin: 10px 0;
+    }
+    .stMetric > div {
+        background: #ffffff;
         padding: 10px;
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stMetric [data-testid="metric-container"] {
+        background: #ffffff;
+        border: 1px solid #ddd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .stMetric [data-testid="metric-container"] > div {
+        color: #1a1a1a;
+        font-weight: 600;
+    }
+    .stMetric [data-testid="metric-container"] label {
+        color: #333333;
+        font-weight: 700;
+        font-size: 14px;
+    }
+    .stMetric [data-testid="metric-container"] [data-testid="metric-value"] {
+        color: #1a1a1a;
+        font-size: 24px;
+        font-weight: 700;
+    }
+    .stMetric [data-testid="metric-container"] [data-testid="metric-delta"] {
+        font-weight: 600;
     }
     </style>
     """, unsafe_allow_html=True)
