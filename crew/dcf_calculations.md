@@ -1,0 +1,1 @@
+Unable to perform DCF analysis for NSIVE due to the stock ticker not being found in the financial data API. Please provide a valid stock ticker to proceed.

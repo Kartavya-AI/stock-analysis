@@ -1,0 +1,28 @@
+## Required packages for DCF Analysis Crew
+
+## Core CrewAI packages
+crewai>=0.134.0
+crewai-tools>=0.48.0
+
+## Data manipulation and export
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+## API and web requests
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+## Core Python dependencies
+pydantic>=2.11.7
+
+## Optional - for web search (if SERPER_API_KEY is available)
+# google-search-results>=2.4.0
+
+## Optional - for additional data sources
+# yfinance>=0.2.0
+# alpha-vantage>=2.3.0
+
+## Development dependencies (optional)
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0

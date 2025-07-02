@@ -1,0 +1,134 @@
+extract_company_info:
+  description: >
+    Analyze the user query: "{query}" and extract the following information:
+    1. Company name(s) mentioned in the query
+    2. Stock symbol(s) if explicitly mentioned
+    3. Type of analysis requested (DCF, UFCF, comprehensive, etc.)
+    4. Time period preference (annual/quarterly)
+    5. Number of years of historical data needed
+    
+    If stock symbol is not provided, research and identify the correct stock symbol 
+    for the company. Handle variations in company names (e.g., "Apple" -> "AAPL", 
+    "Microsoft Corporation" -> "MSFT").
+    
+    Return a structured summary with:
+    - Company name
+    - Stock symbol
+    - Analysis type requested
+    - Period (annual/quarterly)
+    - Years of data
+  expected_output: >
+    A structured summary containing the extracted company information, stock symbol, 
+    and analysis requirements in a clear format.
+  agent: company_researcher
+
+fetch_financial_data:
+  description: >
+    Using the company information extracted from the previous task, fetch comprehensive 
+    financial data using the FMP API tool. Retrieve:
+    1. Income statement data for EBIT calculation
+    2. Cash flow statement data for depreciation, CapEx, and working capital changes
+    3. Calculate tax rates from income statement data
+    4. Ensure data quality and completeness
+    
+    Use the company's stock symbol: {stock_symbol}
+    Period: {period}
+    Years: {years}
+    
+    Save the data to both CSV and Excel formats for further analysis.
+  expected_output: >
+    Complete financial dataset including income statement and cash flow data, 
+    with confirmation of successful data retrieval and file saving.
+  agent: financial_analyst
+
+calculate_dcf_metrics:
+  description: >
+    Perform comprehensive DCF calculations and valuation using the fetched financial data:
+    
+    1. Use the FMP Financial Data Tool with data_type='valuation' to get complete DCF valuation
+    2. Calculate EBIT (Earnings Before Interest and Taxes) from operating income
+    3. Calculate effective tax rate using: (Income Tax Expense / Income Before Tax) * 100
+    4. Extract depreciation and amortization from cash flow statement
+    5. Calculate Capital Expenditures (CapEx) from cash flow statement
+    6. Calculate working capital changes from cash flow statement
+    7. Compute Unlevered Free Cash Flow (UFCF) using the formula:
+       UFCF = EBIT × (1 - Tax Rate) + Depreciation - CapEx - ΔWorking Capital
+    8. Get complete DCF valuation including:
+       - Present value of projected cash flows
+       - Terminal value calculation
+       - Enterprise value and equity value
+       - Intrinsic value per share
+       - Current market price comparison
+       - Investment recommendation (OVERVALUED/UNDERVALUED/FAIRLY VALUED)
+    
+    Use the tool call: FMP Financial Data Tool with parameters:
+    - symbol: {stock_symbol}
+    - data_type: "valuation"
+    - period: {period}
+    - years: {years}
+    
+    Analyze trends across the years and identify any significant changes or patterns.
+    
+    Company: {company_name}
+    Stock Symbol: {stock_symbol}
+  expected_output: >
+    Detailed DCF calculations and complete valuation analysis with year-over-year analysis, including:
+    - EBIT for each year
+    - Effective tax rates
+    - Depreciation & amortization figures
+    - CapEx amounts
+    - Working capital changes
+    - Calculated UFCF for each year
+    - Complete DCF valuation with intrinsic value per share
+    - Current market price vs intrinsic value comparison
+    - Investment recommendation with reasoning
+    - Trend analysis and key insights
+  agent: dcf_calculator
+
+generate_analysis_report:
+  description: >
+    Create a comprehensive financial analysis report in JSON format based on the DCF calculations 
+    and financial data analysis. The JSON response should include:
+    
+    {
+      "executive_summary": "Brief overview of financial analysis",
+      "company_overview": "Company description and business model",
+      "financial_metrics": {
+        "revenue": [{"year": 2024, "value": 391.04, "currency": "USD_billions"}],
+        "ebit": [{"year": 2024, "value": 123.22, "currency": "USD_billions"}],
+        "net_income": [{"year": 2024, "value": 93.74, "currency": "USD_billions"}],
+        "tax_rate": [{"year": 2024, "value": 24.09, "unit": "percent"}],
+        "capex": [{"year": 2024, "value": 9.45, "currency": "USD_billions"}],
+        "working_capital_change": [{"year": 2024, "value": 3.65, "currency": "USD_billions"}]
+      },
+      "dcf_analysis": {
+        "ufcf_calculations": [
+          {"year": 2024, "ebit": 123.22, "tax_rate": 24.09, "depreciation": 11.45, "capex": 9.45, "wc_change": 3.65, "ufcf": 101.84}
+        ],
+        "trends": {
+          "revenue_trend": "description",
+          "profitability_trend": "description",
+          "cash_flow_trend": "description"
+        }
+      },
+      "valuation": {
+        "intrinsic_value": 150.00,
+        "current_price": 145.50,
+        "recommendation": "UNDERVALUED|OVERVALUED|FAIRLY_VALUED",
+        "upside_potential": 3.1
+      },
+      "key_insights": ["insight1", "insight2", "insight3"],
+      "data_quality_notes": "Any limitations or data quality issues",
+      "methodology": "UFCF = EBIT × (1 - Tax Rate) + Depreciation - CapEx - ΔWorking Capital"
+    }
+    
+    Return ONLY valid JSON format, no additional text or formatting.
+    
+    Company: {company_name}
+    Analysis Period: {period} data for {years} years
+  expected_output: >
+    A valid JSON object containing comprehensive financial analysis with all required sections:
+    executive_summary, company_overview, financial_metrics, dcf_analysis, valuation, 
+    key_insights, data_quality_notes, and methodology. The JSON should be properly formatted 
+    and contain real calculated values from the DCF analysis.
+  agent: report_generator
