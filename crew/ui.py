@@ -24,12 +24,38 @@ class StreamlitDCFInterface:
     
     def __init__(self):
         """Initialize the DCF analysis interface"""
+        self._setup_api_keys()
         if 'dcf_crew' not in st.session_state:
             try:
                 st.session_state.dcf_crew = create_dcf_crew()
             except Exception as e:
                 st.error(f"Failed to initialize DCF crew: {str(e)}")
                 st.stop()
+    
+    def _setup_api_keys(self):
+        """Setup API keys from user input or environment variables"""
+        # Check if API keys are configured in session state or environment
+        api_keys = {
+            'SERPER_API_KEY': st.session_state.get('serper_api_key', os.getenv('SERPER_API_KEY', '')),
+            'GEMINI_API_KEY': st.session_state.get('gemini_api_key', os.getenv('GEMINI_API_KEY', '')),
+            'FMP_API_KEY': st.session_state.get('fmp_api_key', os.getenv('FMP_API_KEY', ''))
+        }
+        
+        # Set environment variables
+        for key, value in api_keys.items():
+            if value:
+                os.environ[key] = value
+    
+    def validate_api_keys(self) -> tuple[bool, list]:
+        """Validate that all required API keys are configured"""
+        missing_keys = []
+        required_keys = ['SERPER_API_KEY', 'GEMINI_API_KEY', 'FMP_API_KEY']
+        
+        for key in required_keys:
+            if not os.getenv(key):
+                missing_keys.append(key)
+        
+        return len(missing_keys) == 0, missing_keys
     
     def analyze_company(self, query: str) -> str:
         """
@@ -393,8 +419,79 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
+    # Check API key status and show info if needed
+    is_valid, missing_keys = dcf_interface.validate_api_keys()
+    if not is_valid:
+        st.info("""
+        🔐 **Setup Required:** Please configure your API keys in the sidebar before running analysis.
+        
+        **Required API Keys:**
+        - **SERPER API** - For web search functionality
+        - **GEMINI API** - For AI-powered analysis  
+        - **FMP API** - For financial data retrieval
+        
+        👈 Use the "API Keys Setup" section in the sidebar to configure these keys.
+        """)
+    
     # Sidebar for configuration
     with st.sidebar:
+        # API Keys Configuration
+        st.markdown("### 🔐 API Configuration")
+        with st.expander("🔑 API Keys Setup", expanded=False):
+            st.markdown("**Required API Keys:**")
+            
+            # SERPER API Key
+            serper_key = st.text_input(
+                "🔍 SERPER API Key",
+                value=st.session_state.get('serper_api_key', ''),
+                type="password",
+                help="API key for web search functionality",
+                placeholder="Enter your SERPER API key"
+            )
+            if serper_key:
+                st.session_state.serper_api_key = serper_key
+            
+            # GEMINI API Key
+            gemini_key = st.text_input(
+                "🤖 GEMINI API Key",
+                value=st.session_state.get('gemini_api_key', ''),
+                type="password",
+                help="Google Gemini API key for AI analysis",
+                placeholder="Enter your GEMINI API key"
+            )
+            if gemini_key:
+                st.session_state.gemini_api_key = gemini_key
+            
+            # FMP API Key
+            fmp_key = st.text_input(
+                "📊 FMP API Key",
+                value=st.session_state.get('fmp_api_key', ''),
+                type="password",
+                help="Financial Modeling Prep API key for financial data",
+                placeholder="Enter your FMP API key"
+            )
+            if fmp_key:
+                st.session_state.fmp_api_key = fmp_key
+            
+            # Validation status
+            is_valid, missing_keys = dcf_interface.validate_api_keys()
+            if is_valid:
+                st.success("✅ All API keys configured")
+                # Add clear button for configured keys
+                if st.button("🗑️ Clear All API Keys", help="Remove all stored API keys"):
+                    for key in ['serper_api_key', 'gemini_api_key', 'fmp_api_key']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+            else:
+                st.warning(f"⚠️ Missing API keys: {', '.join(missing_keys)}")
+                st.markdown("""
+                **Get your API keys:**
+                - [SERPER API](https://serper.dev/) - Web search
+                - [Google AI Studio](https://aistudio.google.com/app/apikey) - Gemini API
+                - [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs) - Financial data
+                """)
+        
         st.markdown("### 🎛️ Analysis Configuration")
         
         # Company input
@@ -495,17 +592,30 @@ def main():
     st.markdown("---")
     
     if st.button("🚀 Run DCF Analysis", type="primary", use_container_width=True):
-        if query:
-            with st.spinner("🔄 Performing DCF analysis... This may take a few minutes."):
-                # Run the analysis
-                result = dcf_interface.analyze_company(query)
-                
-                # Store results in session state
-                st.session_state.analysis_result = result
-                st.session_state.query_used = query
-                st.session_state.analysis_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        else:
+        # Validate API keys first
+        is_valid, missing_keys = dcf_interface.validate_api_keys()
+        
+        if not is_valid:
+            st.error(f"❌ Please configure the following API keys in the sidebar: {', '.join(missing_keys)}")
+        elif not query:
             st.error("❌ Please enter a query or select a company to analyze")
+        else:
+            with st.spinner("🔄 Performing DCF analysis... This may take a few minutes."):
+                try:
+                    # Refresh API keys setup
+                    dcf_interface._setup_api_keys()
+                    
+                    # Run the analysis
+                    result = dcf_interface.analyze_company(query)
+                    
+                    # Store results in session state
+                    st.session_state.analysis_result = result
+                    st.session_state.query_used = query
+                    st.session_state.analysis_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                except Exception as e:
+                    st.error(f"❌ Analysis failed: {str(e)}")
+                    st.error("Please check your API keys and try again.")
     
     # Display results if available
     if hasattr(st.session_state, 'analysis_result'):
