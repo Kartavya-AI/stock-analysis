@@ -1,405 +1,696 @@
-#!/usr/bin/env python3
-"""
-DCF Analysis Crew
-
-This module contains the DCF Analysis crew that processes user queries to extract
-company information and perform comprehensive DCF analysis using Financial Modeling Prep API.
-"""
-
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+sys.modules["sqlite3.dbapi2"] = sys.modules["pysqlite3.dbapi2"]
+import streamlit as st
+import sys
 import os
-import re
-from typing import Dict, List, Optional
-from crewai import Agent, Task, Crew, Process, LLM
-from crewai.project import CrewBase, agent, crew, task
-from crewai_tools import SerperDevTool
-from dotenv import load_dotenv
-# Import our custom FMP tool
-from src.crew.tools.fmp import FMPTool
-load_dotenv()
+import pandas as pd
+from typing import Optional, Dict, Any
+import json
+from datetime import datetime
 
-@CrewBase
-class DCFCrew:
-    """DCF Analysis Crew for financial analysis"""
-    
-    agents_config = 'config/agents.yaml'
-    tasks_config = 'config/tasks.yaml'
+# Add the src directory to the path (adjust path as needed)
+try:
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+    from crew.dcf_crew import create_dcf_crew
+except ImportError:
+    st.error("Could not import DCF crew module. Please ensure the src/crew/dcf_crew.py file exists.")
+    st.stop()
+
+
+class StreamlitDCFInterface:
+    """Streamlit interface for DCF analysis with structured JSON handling"""
     
     def __init__(self):
-        # Initialize LLM - using Gemini if API key is available, otherwise default
-        gemini_key = os.getenv('GEMINI_API_KEY')
-        if gemini_key:
-            self.llm = LLM(model="gemini/gemini-2.0-flash", api_key=gemini_key)
-        else:
-            # Use default LLM or OpenAI if available
-            openai_key = os.getenv('OPENAI_API_KEY')
-            if openai_key:
-                self.llm = LLM(model="gpt-4o-mini", api_key=openai_key)
-            else:
-                # Default to a free model or let CrewAI handle it
-                self.llm = None
-        
-        # Initialize tools
-        self.fmp_tool = FMPTool()
-        # For web search to get company info
-        self.search_tool = SerperDevTool() if os.getenv('SERPER_API_KEY') else None
+        """Initialize the DCF analysis interface"""
+        self._setup_api_keys()
+        if 'dcf_crew' not in st.session_state:
+            try:
+                st.session_state.dcf_crew = create_dcf_crew()
+            except Exception as e:
+                st.error(f"Failed to initialize DCF crew: {str(e)}")
+                st.stop()
     
-    def extract_stock_symbol(self, company_name: str) -> str:
-        """
-        Extract or derive stock symbol from company name
-        This is a simple mapping - in production, you'd use a more comprehensive database
-        """
-        print(f"🔍 extract_stock_symbol called with: '{company_name}'")
-        
-        # Common company name to stock symbol mappings
-        symbol_mapping = {
-            'apple': 'AAPL',
-            'apple inc': 'AAPL',
-            'microsoft': 'MSFT',
-            'microsoft corporation': 'MSFT',
-            'amazon': 'AMZN',
-            'amazon.com': 'AMZN',
-            'google': 'GOOGL',
-            'alphabet': 'GOOGL',
-            'meta': 'META',
-            'facebook': 'META',
-            'tesla': 'TSLA',
-            'tesla inc': 'TSLA',
-            'nvidia': 'NVDA',
-            'nvidia corporation': 'NVDA',
-            'netflix': 'NFLX',
-            'netflix inc': 'NFLX',
-            'coca-cola': 'KO',
-            'coca cola': 'KO',
-            'johnson & johnson': 'JNJ',
-            'johnson and johnson': 'JNJ',
-            'walmart': 'WMT',
-            'walmart inc': 'WMT',
-            'disney': 'DIS',
-            'walt disney': 'DIS',
-            'mcdonalds': 'MCD',
-            "mcdonald's": 'MCD',
-            'visa': 'V',
-            'visa inc': 'V',
-            'mastercard': 'MA',
-            'mastercard inc': 'MA',
-            'intel': 'INTC',
-            'intel corporation': 'INTC',
-            'ibm': 'IBM',
-            'international business machines': 'IBM',
-            'oracle': 'ORCL',
-            'oracle corporation': 'ORCL',
-            'salesforce': 'CRM',
-            'salesforce.com': 'CRM',
-            'adobe': 'ADBE',
-            'adobe inc': 'ADBE',
-            'paypal': 'PYPL',
-            'paypal holdings': 'PYPL',
-            'uber': 'UBER',
-            'uber technologies': 'UBER',
-            'airbnb': 'ABNB',
-            'airbnb inc': 'ABNB',
-            'zoom': 'ZM',
-            'zoom video': 'ZM',
-            'slack': 'WORK',
-            'slack technologies': 'WORK',
-            'spotify': 'SPOT',
-            'spotify technology': 'SPOT',
-            'twitter': 'TWTR',
-            'twitter inc': 'TWTR',
-            'snap': 'SNAP',
-            'snap inc': 'SNAP',
-            'pinterest': 'PINS',
-            'pinterest inc': 'PINS',
-            'square': 'SQ',
-            'block': 'SQ',
-            'roku': 'ROKU',
-            'roku inc': 'ROKU',
-            'peloton': 'PTON',
-            'peloton interactive': 'PTON',
-            'beyond meat': 'BYND',
-            'beyond meat inc': 'BYND',
-            'zoom': 'ZM',
-            'zoom video communications': 'ZM',
-            'crowdstrike': 'CRWD',
-            'crowdstrike holdings': 'CRWD',
-            'snowflake': 'SNOW',
-            'snowflake inc': 'SNOW',
-            'palantir': 'PLTR',
-            'palantir technologies': 'PLTR',
-            'roblox': 'RBLX',
-            'roblox corporation': 'RBLX',
-            'coinbase': 'COIN',
-            'coinbase global': 'COIN',
-            'robinhood': 'HOOD',
-            'robinhood markets': 'HOOD',
-            'upstart': 'UPST',
-            'upstart holdings': 'UPST',
-            'affirm': 'AFRM',
-            'affirm holdings': 'AFRM'
+    def _setup_api_keys(self):
+        """Setup API keys from user input or environment variables"""
+        # Check if API keys are configured in session state or environment
+        api_keys = {
+            'SERPER_API_KEY': st.session_state.get('serper_api_key', os.getenv('SERPER_API_KEY', '')),
+            'GEMINI_API_KEY': st.session_state.get('gemini_api_key', os.getenv('GEMINI_API_KEY', '')),
+            'FMP_API_KEY': st.session_state.get('fmp_api_key', os.getenv('FMP_API_KEY', ''))
         }
         
-        # Clean the company name
-        clean_name = company_name.lower().strip()
-        clean_name = re.sub(r'\s+', ' ', clean_name)  # Replace multiple spaces with single space
-        clean_name = re.sub(r'[^\w\s&.-]', '', clean_name)  # Remove special characters except &, ., -
-        
-        print(f"🔍 Cleaned name: '{clean_name}'")
-        
-        # Check exact match first
-        if clean_name in symbol_mapping:
-            result = symbol_mapping[clean_name]
-            print(f"🔍 Exact match found: '{result}'")
-            return result
-        
-        # Check partial matches
-        for name, symbol in symbol_mapping.items():
-            if name in clean_name or clean_name in name:
-                print(f"🔍 Partial match found: '{name}' -> '{symbol}'")
-                return symbol
-        
-        # If no match found, return the original name (user might have provided symbol)
-        # Check if it looks like a stock symbol (2-5 uppercase letters)
-        original_upper = company_name.strip().upper()
-        if re.match(r'^[A-Z]{2,5}$', original_upper):
-            print(f"🔍 Looks like stock symbol: '{original_upper}'")
-            return original_upper
-        
-        # Check for common parsing errors
-        invalid_patterns = ['NSIVE', 'NSVE', 'COMPR', 'COMP', 'ANALY', 'ANAL', 'REPOR', 'REPO', 'STUDI', 'STUD', 'HENSI', 'HENS']
-        fallback_test = clean_name.upper().replace(' ', '')[:5]
-        if fallback_test in invalid_patterns or fallback_test[:4] in invalid_patterns:
-            # This looks like a parsing error, return empty to trigger manual handling
-            print(f"🔍 Invalid pattern detected: '{fallback_test}' - returning empty")
-            return ''
-        
-        # Default fallback - but be more careful
-        fallback = clean_name.upper().replace(' ', '')[:4]  # Limit to 4 chars to be safer
-        
-        # Only return fallback if it looks reasonable (contains actual letters, not just fragments)
-        if len(fallback) >= 2 and not any(fragment in fallback for fragment in ['NSIV', 'OMPR', 'NALY']):
-            print(f"🔍 Using fallback: '{fallback}'")
-            return fallback
-        
-        # If we can't determine a good symbol, return empty string
-        print(f"🔍 No valid symbol found - returning empty")
-        return ''
+        # Set environment variables
+        for key, value in api_keys.items():
+            if value:
+                os.environ[key] = value
     
-    @agent
-    def company_researcher(self) -> Agent:
-        """Create the company researcher agent"""
-        tools = []
-        if self.search_tool:
-            tools.append(self.search_tool)
+    def validate_api_keys(self) -> tuple[bool, list]:
+        """Validate that all required API keys are configured"""
+        missing_keys = []
+        required_keys = ['SERPER_API_KEY', 'GEMINI_API_KEY', 'FMP_API_KEY']
         
-        agent_config = {
-            'config': self.agents_config['company_researcher'],
-            'tools': tools,
-            'verbose': True,
-            'allow_delegation': False
-        }
+        for key in required_keys:
+            if not os.getenv(key):
+                missing_keys.append(key)
         
-        if self.llm:
-            agent_config['llm'] = self.llm
-            
-        return Agent(**agent_config)
-    
-    @agent
-    def financial_analyst(self) -> Agent:
-        """Create the financial analyst agent"""
-        agent_config = {
-            'config': self.agents_config['financial_analyst'],
-            'tools': [self.fmp_tool],
-            'verbose': True,
-            'allow_delegation': False
-        }
-        
-        if self.llm:
-            agent_config['llm'] = self.llm
-            
-        return Agent(**agent_config)
-    
-    @agent
-    def dcf_calculator(self) -> Agent:
-        """Create the DCF calculator agent"""
-        agent_config = {
-            'config': self.agents_config['dcf_calculator'],
-            'tools': [self.fmp_tool],
-            'verbose': True,
-            'allow_delegation': False
-        }
-        
-        if self.llm:
-            agent_config['llm'] = self.llm
-            
-        return Agent(**agent_config)
-    
-    @agent
-    def report_generator(self) -> Agent:
-        """Create the report generator agent"""
-        agent_config = {
-            'config': self.agents_config['report_generator'],
-            'verbose': True,
-            'allow_delegation': False
-        }
-        
-        if self.llm:
-            agent_config['llm'] = self.llm
-            
-        return Agent(**agent_config)
-    
-    @task
-    def extract_company_info(self) -> Task:
-        """Create the company information extraction task"""
-        return Task(
-            config=self.tasks_config['extract_company_info'],
-            agent=self.company_researcher(),
-            output_file='company_info.md'
-        )
-    
-    @task
-    def fetch_financial_data(self) -> Task:
-        """Create the financial data fetching task"""
-        return Task(
-            config=self.tasks_config['fetch_financial_data'],
-            agent=self.financial_analyst(),
-            output_file='financial_data.md'
-        )
-    
-    @task
-    def calculate_dcf_metrics(self) -> Task:
-        """Create the DCF metrics calculation task"""
-        return Task(
-            config=self.tasks_config['calculate_dcf_metrics'],
-            agent=self.dcf_calculator(),
-            output_file='dcf_calculations.md'
-        )
-    
-    @task
-    def generate_analysis_report(self) -> Task:
-        """Create the analysis report generation task"""
-        return Task(
-            config=self.tasks_config['generate_analysis_report'],
-            agent=self.report_generator(),
-            output_file='final_analysis_report.md'
-        )
-    
-    @crew
-    def crew(self) -> Crew:
-        """Create the DCF analysis crew"""
-        return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            process=Process.sequential,
-            verbose=True
-        )
+        return len(missing_keys) == 0, missing_keys
     
     def analyze_company(self, query: str) -> str:
         """
-        Main method to analyze a company based on user query
+        Analyze a company based on user query
         
         Args:
-            query: User query containing company information and analysis requirements
+            query: Natural language query about company analysis
             
         Returns:
-            Final analysis report
+            Analysis result
         """
-        # Extract basic info from query to help guide the analysis
-        extracted_info = self._extract_basic_info(query)
+        if not query or not query.strip():
+            return "Please provide a valid query."
         
-        # Prepare inputs for the crew
-        inputs = {
-            'query': query,
-            'company_name': extracted_info.get('company_name', 'Unknown'),
-            'stock_symbol': extracted_info.get('stock_symbol', 'Unknown'),
-            'period': extracted_info.get('period', 'annual'),
-            'years': extracted_info.get('years', 5)
-        }
+        try:
+            result = st.session_state.dcf_crew.analyze_company(query.strip())
+            return result
+            
+        except Exception as e:
+            return f"Error during analysis: {str(e)}"
+
+
+def parse_dcf_json(analysis_result) -> Optional[Dict[str, Any]]:
+    """
+    Parse DCF analysis result and return structured JSON data
+    """
+    try:
+        # Handle CrewOutput object
+        result_text = str(analysis_result)
+        if hasattr(analysis_result, 'raw'):
+            result_text = analysis_result.raw
+        elif hasattr(analysis_result, 'result'):
+            result_text = analysis_result.result
         
-        # Run the crew
-        result = self.crew().kickoff(inputs=inputs)
+        # Extract JSON from text if it contains JSON block
+        if '```json' in result_text:
+            start_idx = result_text.find('```json') + 7
+            end_idx = result_text.find('```', start_idx)
+            if end_idx > start_idx:
+                result_text = result_text[start_idx:end_idx].strip()
         
-        return result
+        # Try to parse JSON
+        if result_text.strip().startswith('{'):
+            return json.loads(result_text)
+        
+        return None
+        
+    except Exception as e:
+        st.error(f"Error parsing DCF analysis result: {e}")
+        return None
+
+
+def display_executive_summary(summary: str):
+    """Display executive summary in a structured format"""
+    st.markdown("### 📋 Executive Summary")
+    st.markdown(f"""
+    <div style='background: #1a252f; padding: 20px; border-radius: 10px; border-left: 4px solid #4472C4; margin: 10px 0;'>
+        <p style='margin: 0; font-size: 16px; line-height: 1.6; color: #ffffff;'>{summary}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def display_company_overview(overview: str):
+    """Display company overview in a structured format"""
+    st.markdown("### 🏢 Company Overview")
+    st.markdown(f"""
+    <div style='background: #1a252f; padding: 20px; border-radius: 10px; margin: 10px 0;'>
+        <p style='margin: 0; font-size: 15px; line-height: 1.6; color: #ffffff;'>{overview}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def display_valuation_results(valuation_data: Dict):
+    """Display valuation results with enhanced formatting"""
+    st.markdown("### 🎯 Valuation Results")
     
-    def _extract_basic_info(self, query: str) -> Dict:
-        """
-        Extract basic information from query to help guide the analysis
-        This is a helper method for the crew
-        """
-        print(f"🔍 DCF Crew: Extracting info from query: '{query}'")
-        
-        query_lower = query.lower()
-        
-        # Try to extract company name using common patterns
-        company_patterns = [
-            r'analyze\s+([A-Za-z\s&.-]+?)(?:\s+stock|\s+company|\s+for|\s+dcf|$)',
-            r'(?:company|stock|ticker)[\s:]+([A-Za-z\s&.-]+?)(?:\s+analysis|\s+dcf|\s+for|$)',
-            r'dcf\s+(?:analysis\s+)?(?:for\s+)?([A-Za-z\s&.-]+?)(?:\s+company|\s+stock|$)',
-            r'([A-Z]{2,5})\s+(?:stock|company|analysis|dcf)',
-            r'(?:^|\s)([A-Za-z\s&.-]+?)\s+(?:dcf|analysis|financial|valuation)'
-        ]
-        
-        company_name = None
-        for i, pattern in enumerate(company_patterns):
-            match = re.search(pattern, query, re.IGNORECASE)
-            if match:
-                company_name = match.group(1).strip()
-                print(f"🔍 Pattern {i+1} matched: '{company_name}'")
-                break
-        
-        print(f"🔍 Extracted company name: '{company_name}'")
-        
-        # Extract stock symbol if provided
-        stock_symbol = None
-        if company_name:
-            print(f"🔍 Converting '{company_name}' to stock symbol...")
-            stock_symbol = self.extract_stock_symbol(company_name)
-            print(f"🔍 Converted to symbol: '{stock_symbol}'")
+    recommendation = valuation_data.get('recommendation', 'N/A')
+    intrinsic_value = valuation_data.get('intrinsic_value', 'N/A')
+    current_price = valuation_data.get('current_price', 'N/A')
+    upside_potential = valuation_data.get('upside_potential', 'N/A')
+    
+    # Color coding for recommendation - using darker, more visible colors
+    color_map = {
+        "UNDERVALUED": "#1e7e34",  # Darker green
+        "OVERVALUED": "#bd2130",   # Darker red
+        "FAIRLY_VALUED": "#e0a800"  # Darker yellow/amber
+    }
+    bg_color = color_map.get(recommendation, "#1a252f")
+    
+    # Display recommendation banner
+    st.markdown(f"""
+    <div style='background: {bg_color}; 
+                padding: 25px; border-radius: 15px; text-align: center; 
+                margin: 20px 0; box-shadow: 0 4px 8px rgba(0,0,0,0.1);'>
+        <h1 style='color: white; margin: 0; font-size: 2.5em;'>
+            📈 {recommendation}
+        </h1>
+        <p style='color: white; margin: 10px 0 0 0; font-size: 1.2em;'>
+            Investment Recommendation
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Valuation metrics in columns
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "🎯 Intrinsic Value",
+            f"${intrinsic_value:.2f}" if isinstance(intrinsic_value, (int, float)) else str(intrinsic_value),
+            help="Calculated fair value based on DCF analysis"
+        )
+    
+    with col2:
+        st.metric(
+            "💰 Current Price",
+            f"${current_price:.2f}" if isinstance(current_price, (int, float)) else str(current_price),
+            help="Current market price per share"
+        )
+    
+    with col3:
+        delta_value = None
+        if isinstance(upside_potential, (int, float)):
+            delta_value = f"{upside_potential:.1f}%"
+        st.metric(
+            "📊 Upside/Downside",
+            f"{upside_potential:.1f}%" if isinstance(upside_potential, (int, float)) else str(upside_potential),
+            delta=delta_value,
+            help="Potential return based on intrinsic value vs current price"
+        )
+    
+    with col4:
+        # Calculate absolute price difference
+        if isinstance(intrinsic_value, (int, float)) and isinstance(current_price, (int, float)):
+            price_diff = intrinsic_value - current_price
+            st.metric(
+                "💲 Price Difference",
+                f"${price_diff:.2f}",
+                delta=f"${price_diff:.2f}",
+                help="Absolute difference between intrinsic and current price"
+            )
+        else:
+            st.metric("💲 Price Difference", "N/A")
+
+
+def display_financial_metrics(financial_metrics: Dict):
+    """Display financial metrics in a structured table"""
+    st.markdown("### 📊 Financial Metrics")
+    
+    # Create structured data for display
+    metrics_data = []
+    
+    for metric_name, metric_values in financial_metrics.items():
+        if isinstance(metric_values, list) and len(metric_values) > 0:
+            # Get the most recent data point
+            latest_data = metric_values[0]
             
-            # If extraction failed (returned empty), try to use the original if it looks like a symbol
-            if not stock_symbol and re.match(r'^[A-Z]{2,5}$', company_name.strip()):
-                stock_symbol = company_name.strip().upper()
-                print(f"🔍 Using original as symbol: '{stock_symbol}'")
+            # Format metric name
+            display_name = metric_name.replace('_', ' ').title()
             
-            # If still no symbol and company_name looks suspicious, reset company_name
-            if not stock_symbol and any(fragment in company_name.upper() for fragment in ['NSIVE', 'COMPREHENSIVE', 'ANALYSIS']):
-                print(f"🔍 Suspicious company name detected, resetting...")
-                company_name = None
-                stock_symbol = None
+            # Extract value and unit
+            value = latest_data.get('value', 'N/A')
+            currency = latest_data.get('currency', '')
+            unit = latest_data.get('unit', '')
+            year = latest_data.get('year', 'N/A')
+            
+            # Format value based on unit/currency
+            if currency == 'USD_billions':
+                formatted_value = f"${value:.2f}B"
+            elif unit == 'percent':
+                formatted_value = f"{value:.2f}%"
+            else:
+                formatted_value = f"{value:.2f}"
+            
+            metrics_data.append({
+                'Metric': display_name,
+                'Value': formatted_value,
+                'Year': year
+            })
+    
+    if metrics_data:
+        df = pd.DataFrame(metrics_data)
         
-        # Extract period preference
-        period = 'annual'
-        if 'quarter' in query_lower or 'quarterly' in query_lower:
-            period = 'quarter'
+        # Display as a styled table
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Metric": st.column_config.TextColumn("Financial Metric", width="medium"),
+                "Value": st.column_config.TextColumn("Value", width="medium"),
+                "Year": st.column_config.NumberColumn("Year", width="small")
+            }
+        )
+    else:
+        st.info("No financial metrics data available")
+
+
+def display_dcf_analysis(dcf_data: Dict):
+    """Display DCF analysis details in structured format"""
+    st.markdown("### 🧮 DCF Analysis Details")
+    
+    # UFCF Calculations
+    if 'ufcf_calculations' in dcf_data:
+        st.markdown("#### 💰 Unlevered Free Cash Flow (UFCF)")
         
-        # Extract years
-        years = 5
-        year_match = re.search(r'(\d+)\s+years?', query_lower)
-        if year_match:
-            years = int(year_match.group(1))
+        ufcf_data = dcf_data['ufcf_calculations']
+        if isinstance(ufcf_data, list) and len(ufcf_data) > 0:
+            # Convert to DataFrame for better display
+            df = pd.DataFrame(ufcf_data)
+            
+            # Format column names
+            column_mapping = {
+                'year': 'Year',
+                'ebit': 'EBIT ($B)',
+                'tax_rate': 'Tax Rate (%)',
+                'depreciation': 'Depreciation ($B)',
+                'capex': 'CapEx ($B)',
+                'wc_change': 'WC Change ($B)',
+                'ufcf': 'UFCF ($B)'
+            }
+            
+            # Rename columns that exist
+            for old_col, new_col in column_mapping.items():
+                if old_col in df.columns:
+                    df = df.rename(columns={old_col: new_col})
+            
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No UFCF calculation data available")
+    
+    # Trends Analysis
+    if 'trends' in dcf_data:
+        st.markdown("#### 📈 Financial Trends Analysis")
+        trends = dcf_data['trends']
         
-        return {
-            'company_name': company_name,
-            'stock_symbol': stock_symbol,
-            'period': period,
-            'years': min(years, 10)  # Cap at 10 years
-        }
+        for trend_name, trend_description in trends.items():
+            # Format trend name
+            display_name = trend_name.replace('_', ' ').title()
+            
+            st.markdown(f"""
+            <div style='background: #0d7377; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 3px solid #4472C4;'>
+                <h4 style='margin: 0 0 10px 0; color: #ffffff;'>{display_name}</h4>
+                <p style='margin: 0; font-size: 14px; line-height: 1.5; color: #ffffff;'>{trend_description}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 
-# Create the DCF crew instance
-def create_dcf_crew():
-    """Factory function to create DCF crew instance"""
-    return DCFCrew()
+def display_key_insights(insights: list):
+    """Display key insights in a structured format"""
+    st.markdown("### 💡 Key Insights")
+    
+    if insights:
+        for i, insight in enumerate(insights, 1):
+            st.markdown(f"""
+            <div style='background: #5a2d82; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 3px solid #ffc107;'>
+                <p style='margin: 0; font-size: 14px; line-height: 1.5; color: #ffffff;'><strong>Insight {i}:</strong> {insight}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("No key insights available")
 
 
-# Main execution function
+def display_methodology_and_notes(analysis_json: Dict):
+    """Display methodology and data quality notes"""
+    st.markdown("### 📚 Methodology & Notes")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'methodology' in analysis_json:
+            st.markdown("#### 🔬 Methodology")
+            st.markdown(f"""
+            <div style='background: #1e7e34; padding: 15px; border-radius: 8px; border-left: 3px solid #28a745;'>
+                <p style='margin: 0; font-size: 14px; font-family: monospace; color: #ffffff;'>{analysis_json['methodology']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with col2:
+        if 'data_quality_notes' in analysis_json:
+            st.markdown("#### ⚠️ Data Quality Notes")
+            st.markdown(f"""
+            <div style='background: #b8860b; padding: 15px; border-radius: 8px; border-left: 3px solid #ffc107;'>
+                <p style='margin: 0; font-size: 14px; color: #ffffff;'>{analysis_json['data_quality_notes']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+
 def main():
-    """Main function for testing the crew"""
-    crew = create_dcf_crew()
+    """Main Streamlit application with structured DCF analysis display"""
     
-    # Example usage
-    sample_query = "Analyze Apple Inc for DCF analysis with 5 years of annual data"
-    result = crew.analyze_company(sample_query)
-    print(result)
+    # Page configuration
+    st.set_page_config(
+        page_title="DCF Analysis Tool",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Custom CSS for enhanced styling
+    st.markdown("""
+    <style>
+    .main-header {
+        background: linear-gradient(90deg, #4472C4, #5B9BD5);
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    .stMetric {
+        background: #ffffff;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        border: 1px solid #e0e0e0;
+        margin: 10px 0;
+    }
+    .stMetric > div {
+        background: #ffffff;
+        padding: 10px;
+        border-radius: 8px;
+    }
+    .stMetric [data-testid="metric-container"] {
+        background: #ffffff;
+        border: 1px solid #ddd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .stMetric [data-testid="metric-container"] > div {
+        color: #1a1a1a;
+        font-weight: 600;
+    }
+    .stMetric [data-testid="metric-container"] label {
+        color: #333333;
+        font-weight: 700;
+        font-size: 14px;
+    }
+    .stMetric [data-testid="metric-container"] [data-testid="metric-value"] {
+        color: #1a1a1a;
+        font-size: 24px;
+        font-weight: 700;
+    }
+    .stMetric [data-testid="metric-container"] [data-testid="metric-delta"] {
+        font-weight: 600;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Initialize the interface
+    dcf_interface = StreamlitDCFInterface()
+    
+    # Main header
+    st.markdown("""
+    <div class="main-header">
+        <h1 style="color: white; text-align: center; margin: 0;">
+            📊 DCF Analysis Tool
+        </h1>
+        <p style="color: white; text-align: center; margin: 5px 0 0 0; opacity: 0.9;">
+            Comprehensive Discounted Cash Flow Analysis
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Check API key status and show info if needed
+    is_valid, missing_keys = dcf_interface.validate_api_keys()
+    if not is_valid:
+        st.info("""
+        🔐 **Setup Required:** Please configure your API keys in the sidebar before running analysis.
+        
+        **Required API Keys:**
+        - **SERPER API** - For web search functionality
+        - **GEMINI API** - For AI-powered analysis  
+        - **FMP API** - For financial data retrieval
+        
+        👈 Use the "API Keys Setup" section in the sidebar to configure these keys.
+        """)
+    
+    # Sidebar for configuration
+    with st.sidebar:
+        # API Keys Configuration
+        st.markdown("### 🔐 API Configuration")
+        with st.expander("🔑 API Keys Setup", expanded=False):
+            st.markdown("**Required API Keys:**")
+            
+            # SERPER API Key
+            serper_key = st.text_input(
+                "🔍 SERPER API Key",
+                value=st.session_state.get('serper_api_key', ''),
+                type="password",
+                help="API key for web search functionality",
+                placeholder="Enter your SERPER API key"
+            )
+            if serper_key:
+                st.session_state.serper_api_key = serper_key
+            
+            # GEMINI API Key
+            gemini_key = st.text_input(
+                "🤖 GEMINI API Key",
+                value=st.session_state.get('gemini_api_key', ''),
+                type="password",
+                help="Google Gemini API key for AI analysis",
+                placeholder="Enter your GEMINI API key"
+            )
+            if gemini_key:
+                st.session_state.gemini_api_key = gemini_key
+            
+            # FMP API Key
+            fmp_key = st.text_input(
+                "📊 FMP API Key",
+                value=st.session_state.get('fmp_api_key', ''),
+                type="password",
+                help="Financial Modeling Prep API key for financial data",
+                placeholder="Enter your FMP API key"
+            )
+            if fmp_key:
+                st.session_state.fmp_api_key = fmp_key
+            
+            # Validation status
+            is_valid, missing_keys = dcf_interface.validate_api_keys()
+            if is_valid:
+                st.success("✅ All API keys configured")
+                # Add clear button for configured keys
+                if st.button("🗑️ Clear All API Keys", help="Remove all stored API keys"):
+                    for key in ['serper_api_key', 'gemini_api_key', 'fmp_api_key']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+            else:
+                st.warning(f"⚠️ Missing API keys: {', '.join(missing_keys)}")
+                st.markdown("""
+                **Get your API keys:**
+                - [SERPER API](https://serper.dev/) - Web search
+                - [Google AI Studio](https://aistudio.google.com/app/apikey) - Gemini API
+                - [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs) - Financial data
+                """)
+        
+        st.markdown("### 🎛️ Analysis Configuration")
+        
+        # Company input
+        company_input = st.text_input(
+            "🏢 Company Name or Symbol",
+            placeholder="e.g., Apple, AAPL, Microsoft, MSFT",
+            help="Enter the company name or stock symbol for analysis"
+        )
+        
+        # Analysis type
+        analysis_type = st.selectbox(
+            "📋 Analysis Type",
+            [
+                "Comprehensive DCF Analysis",
+                "Quick Valuation Check", 
+                "Financial Metrics Review",
+                "Custom Analysis Query"
+            ],
+            help="Select the type of analysis to perform"
+        )
+        
+        # Time period selection
+        time_period = st.selectbox(
+            "📅 Data Period",
+            ["5 years", "3 years", "10 years", "Custom"],
+            help="Select the historical data period for analysis"
+        )
+        
+        # Advanced DCF parameters
+        with st.expander("⚙️ Advanced DCF Parameters"):
+            discount_rate = st.slider(
+                "Discount Rate (WACC) %", 
+                min_value=5.0, max_value=15.0, value=9.0, step=0.1,
+                help="Weighted Average Cost of Capital"
+            )
+            terminal_growth = st.slider(
+                "Terminal Growth Rate %", 
+                min_value=0.0, max_value=5.0, value=2.5, step=0.1,
+                help="Long-term growth rate assumption"
+            )
+            projection_years = st.slider(
+                "Projection Years", 
+                min_value=5, max_value=15, value=10,
+                help="Number of years for cash flow projections"
+            )
+    
+    # Main content area
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.markdown("### 🔍 Analysis Query")
+        
+        if analysis_type == "Custom Analysis Query":
+            query = st.text_area(
+                "Enter your custom analysis query:",
+                placeholder="e.g., 'Perform comprehensive DCF analysis for Apple with 5 years of historical data'",
+                height=120,
+                help="Describe exactly what kind of analysis you want"
+            )
+        else:
+            # Auto-generate query based on selections
+            if company_input:
+                query_templates = {
+                    "Comprehensive DCF Analysis": f"Perform comprehensive DCF analysis for {company_input} with {time_period} of historical data, including detailed financial metrics, UFCF calculations, and valuation with {discount_rate}% discount rate",
+                    "Quick Valuation Check": f"Quick DCF valuation for {company_input} with {time_period} of data",
+                    "Financial Metrics Review": f"Analyze financial metrics and trends for {company_input} over {time_period}",
+                }
+                query = query_templates.get(analysis_type, f"Analyze {company_input} for DCF analysis")
+                
+                st.text_area(
+                    "Generated Query:", 
+                    value=query, 
+                    height=120, 
+                    disabled=True,
+                    help="This query was automatically generated based on your selections"
+                )
+            else:
+                st.warning("⚠️ Please enter a company name or symbol to generate the analysis query")
+                query = ""
+    
+    with col2:
+        st.markdown("### 💡 Query Examples")
+        st.markdown("""
+        **Comprehensive:**
+        - "DCF analysis for Tesla with 5 years data"
+        - "Analyze Apple financial performance"
+        
+        **Quick Checks:**
+        - "Valuation check for Microsoft"
+        - "Is Amazon undervalued?"
+        
+        **Specific Metrics:**
+        - "UFCF trends for Google"
+        - "Cash flow analysis for Meta"
+        """)
+    
+    # Analysis execution
+    st.markdown("---")
+    
+    if st.button("🚀 Run DCF Analysis", type="primary", use_container_width=True):
+        # Validate API keys first
+        is_valid, missing_keys = dcf_interface.validate_api_keys()
+        
+        if not is_valid:
+            st.error(f"❌ Please configure the following API keys in the sidebar: {', '.join(missing_keys)}")
+        elif not query:
+            st.error("❌ Please enter a query or select a company to analyze")
+        else:
+            with st.spinner("🔄 Performing DCF analysis... This may take a few minutes."):
+                try:
+                    # Refresh API keys setup
+                    dcf_interface._setup_api_keys()
+                    
+                    # Run the analysis
+                    result = dcf_interface.analyze_company(query)
+                    
+                    # Store results in session state
+                    st.session_state.analysis_result = result
+                    st.session_state.query_used = query
+                    st.session_state.analysis_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                except Exception as e:
+                    st.error(f"❌ Analysis failed: {str(e)}")
+                    st.error("Please check your API keys and try again.")
+    
+    # Display results if available
+    if hasattr(st.session_state, 'analysis_result'):
+        st.markdown("---")
+        st.markdown("## 📊 Analysis Results")
+        
+        # Parse JSON result
+        analysis_json = parse_dcf_json(st.session_state.analysis_result)
+        
+        if analysis_json:
+            # Display timestamp and query info
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.info(f"**Query:** {st.session_state.query_used}")
+            with col2:
+                st.caption(f"**Completed:** {st.session_state.analysis_timestamp}")
+            
+            st.markdown("---")
+            
+            # 1. Executive Summary
+            if 'executive_summary' in analysis_json:
+                display_executive_summary(analysis_json['executive_summary'])
+            
+            # 2. Company Overview
+            if 'company_overview' in analysis_json:
+                display_company_overview(analysis_json['company_overview'])
+            
+            st.markdown("---")
+            
+            # 3. Valuation Results (Most Important)
+            if 'valuation' in analysis_json:
+                display_valuation_results(analysis_json['valuation'])
+            
+            st.markdown("---")
+            
+            # 4. Financial Metrics
+            if 'financial_metrics' in analysis_json:
+                display_financial_metrics(analysis_json['financial_metrics'])
+            
+            st.markdown("---")
+            
+            # 5. DCF Analysis Details
+            if 'dcf_analysis' in analysis_json:
+                display_dcf_analysis(analysis_json['dcf_analysis'])
+            
+            st.markdown("---")
+            
+            # 6. Key Insights
+            if 'key_insights' in analysis_json:
+                display_key_insights(analysis_json['key_insights'])
+            
+            st.markdown("---")
+            
+            # 7. Methodology and Notes
+            display_methodology_and_notes(analysis_json)
+            
+        else:
+            # Display raw text result if JSON parsing fails
+            st.markdown("### 📄 Raw Analysis Output")
+            st.text_area(
+                "Analysis Result:", 
+                value=str(st.session_state.analysis_result), 
+                height=400,
+                help="Raw output from the DCF analysis"
+            )
+            
+            # Try to show any partial JSON
+            result_str = str(st.session_state.analysis_result)
+            if '```json' in result_str:
+                st.markdown("### 🔍 Detected JSON Content")
+                start_idx = result_str.find('```json')
+                end_idx = result_str.find('```', start_idx + 7)
+                if end_idx > start_idx:
+                    json_content = result_str[start_idx:end_idx + 3]
+                    st.code(json_content, language='json')
 
 
 if __name__ == "__main__":
