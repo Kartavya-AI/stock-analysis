@@ -1,6 +1,8 @@
 ## Required packages for DCF Analysis Crew
 
 ## Core CrewAI packages
+gunicorn>=20.1.0
+pysqlite3-binary>=0.4.6
 crewai>=0.134.0
 crewai-tools>=0.48.0
 
