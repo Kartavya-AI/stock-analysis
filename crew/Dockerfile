@@ -6,8 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     sqlite3 \
     libsqlite3-dev \
-    && echo "SQLite installed OK" \
-    || (echo "Failed to install SQLite" && exit 1)
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -18,9 +17,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 EXPOSE 8000
+
+# Set environment
 ENV PYTHONPATH=/app
-# Start app
-CMD ["gunicorn", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "main:app"]
+ENV PYTHONUNBUFFERED=1
 
-
-
+# Debug version - shows more detailed errors
+CMD ["gunicorn", "--preload", "--timeout", "0", "--workers", "1", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--log-level", "debug", "main:app"]
