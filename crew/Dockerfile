@@ -23,4 +23,5 @@ ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
 # Debug version - shows more detailed errors
-CMD ["gunicorn", "--preload", "--timeout", "0", "--workers", "1", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--log-level", "debug", "main:app"]
+CMD ["gunicorn", "--preload", "--workers", "1", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--log-level", "debug", "main:app"]
+
