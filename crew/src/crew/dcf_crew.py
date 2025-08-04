@@ -14,7 +14,7 @@ from crewai.project import CrewBase, agent, crew, task
 from crewai_tools import SerperDevTool
 from dotenv import load_dotenv
 # Import our custom FMP tool
-from tools.fmp import FMPTool
+from src.crew.tools.fmp import FMPTool
 load_dotenv()
 
 @CrewBase
@@ -404,3 +404,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
