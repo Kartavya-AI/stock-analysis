@@ -6,6 +6,7 @@ pysqlite3-binary>=0.4.6
 pysqlite3
 crewai>=0.134.0
 crewai-tools>=0.48.0
+crewai[google-genai]
 fastapi
 ## Data manipulation and export
 pandas>=2.0.0
@@ -29,5 +30,6 @@ pydantic>=2.11.7
 # pytest>=7.0.0
 # black>=23.0.0
 # flake8>=6.0.0
+
 
 
