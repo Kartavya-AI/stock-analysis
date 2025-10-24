@@ -6,6 +6,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     sqlite3 \
     libsqlite3-dev \
+    gcc \
+    make \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -24,5 +27,6 @@ ENV PYTHONUNBUFFERED=1
 
 # Debug version - shows more detailed errors
 CMD ["gunicorn", "--preload", "--workers", "1", "--worker-class", "uvicorn.workers.UvicornWorker","--timeout", "24000","--bind", "0.0.0.0:8000", "--log-level", "debug", "main:app"]
+
 
 
